@@ -271,7 +271,7 @@ void MACGrid::computeVorticityConfinement(double dt)
 	}
 
 	FOR_EACH_FACE {
-                // tries to detect border face then extrapolates
+                // tries to detect border face then extrapolates, to that face since there aren't two cells to average
                 if(isValidFace(MACGrid::X, i,j,k)) {
 					double fconfUface;
 					if (i == 0) {
@@ -769,17 +769,33 @@ void MACGrid::calculatePreconditioner(const GridDataMatrix & A) {
 
 	precon.initialize();
 
-    // TODO: Build the modified incomplete Cholesky preconditioner following Fig 4.2 on page 36 of Bridson's 2007 SIGGRAPH fluid course notes.
+    // Build the modified incomplete Cholesky preconditioner following Fig 4.2 on page 36 of Bridson's 2007 SIGGRAPH fluid course notes.
     //       This corresponds to filling in precon(i,j,k) for all cells
+	const double tau = 0.97;
+	FOR_EACH_CELL {
+				double one = A.plusI(i-1, j, k) * precon(i-1,j,k);
+				double two = A.plusJ(i, j-1, k) * precon(i,j-1,k);
+				double thr = A.plusK(i, j, k-1) * precon(i,j,k-1);
+                one *= one;
+				two *= two;
+				thr *= thr;
 
+				const double four = A.plusI(i-1,j,k)*(A.plusJ(i-1,j,k)+A.plusK(i-1,j,k))*precon(i-1,j,k)*precon(i-1,j,k);
+				const double five = A.plusJ(i,j-1,k)*(A.plusI(i,j-1,k)+A.plusK(i,j-1,k))*precon(i,j-1,k)*precon(i,j-1,k);
+				const double six  = A.plusK(i,j,k-1)*(A.plusI(i,j,k-1)+A.plusJ(i,j,k-1))*precon(i,j,k-1)*precon(i,j,k-1);
+
+				const double e = A.diag(i,j,k) - one - two - thr - tau*(four+five+six);
+
+				precon(i,j,k) = 1.0 / sqrt(e + 0.0000001);
+	}
 }
 
 
 void MACGrid::applyPreconditioner(const GridData & r, const GridDataMatrix & A, GridData & z) {
 
-    // TODO: change if(0) to if(1) after you implement calculatePreconditoner function.
+    // change if(0) to if(1) after you implement calculatePreconditoner function.
 
-    if(0) {
+    if(1) {
 
         // APPLY THE PRECONDITIONER:
         // Solve Lq = r for q:
