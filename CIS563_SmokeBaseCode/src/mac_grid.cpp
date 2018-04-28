@@ -130,21 +130,27 @@ void MACGrid::updateSources()
 
 }
 
+////////////////// BEGIN STEP 1/////////////////////
 
 void MACGrid::advectVelocity(double dt)
 {
-    // TODO: Calculate new velocities and store in target
+    //Calculate new velocities and store in target
 
+    //Get rid of these three lines after you implement yours
+	//target.mU = mU;
+    //target.mV = mV;
+    //target.mW = mW;
 
-    // TODO: Get rid of these three lines after you implement yours
-	target.mU = mU;
-    target.mV = mV;
-    target.mW = mW;
-
-    // TODO: Your code is here. It builds target.mU, target.mV and target.mW for all faces
-    //
-    //
-    //
+    //Your code is here. It builds target.mU, target.mV and target.mW for all faces
+	FOR_EACH_FACE {
+		if (isValidFace(MACGrid::X, i, j, k)) {
+        	target.mU(i,j,k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i,j,k), dt));
+		} if (isValidFace(MACGrid::Y, i, j, k)) {
+			target.mV(i,j,k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i,j,k), dt));
+		} if (isValidFace(MACGrid::Z, i, j, k)) {
+			target.mW(i,j,k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i,j,k), dt));
+		}
+	}
 
     // Then save the result to our object
     mU = target.mU;
@@ -153,121 +159,187 @@ void MACGrid::advectVelocity(double dt)
 
 }
 
-void MACGrid::advectTemperature(double dt)
+void MACGrid::addExternalForces(double dt)
 {
-    // TODO: Calculate new temp and store in target
-
-    // TODO: Get rid of this line after you implement yours
-    target.mT = mT;
-
-    // TODO: Your code is here. It builds target.mT for all cells.
-    //
-    //
-    //
-
-    // Then save the result to our object
-    mT = target.mT;
-}
-
-
-void MACGrid::advectRenderingParticles(double dt) {
-	rendering_particles_vel.resize(rendering_particles.size());
-	for (size_t p = 0; p < rendering_particles.size(); p++) {
-		vec3 currentPosition = rendering_particles[p];
-        vec3 currentVelocity = getVelocity(currentPosition);
-        vec3 nextPosition = currentPosition + currentVelocity * dt;
-        vec3 clippedNextPosition = clipToGrid(nextPosition, currentPosition);
-        // Keep going...
-        vec3 nextVelocity = getVelocity(clippedNextPosition);
-        vec3 averageVelocity = (currentVelocity + nextVelocity) / 2.0;
-        vec3 betterNextPosition = currentPosition + averageVelocity * dt;
-        vec3 clippedBetterNextPosition = clipToGrid(betterNextPosition, currentPosition);
-        rendering_particles[p] = clippedBetterNextPosition;
-		rendering_particles_vel[p] = averageVelocity;
-	}
-}
-
-void MACGrid::advectDensity(double dt)
-{
-    // TODO: Calculate new densitities and store in target
-
-    // TODO: Get rid of this line after you implement yours
-    target.mD = mD;
-
-    // TODO: Your code is here. It builds target.mD for all cells.
-    //
-    //
-    //
-
-    // Then save the result to our object
-    mD = target.mD;
+	computeBouyancy(dt);
+	computeVorticityConfinement(dt);
 }
 
 void MACGrid::computeBouyancy(double dt)
 {
-	// TODO: Calculate bouyancy and store in target
+	//Calculate bouyancy and store in target
 
-    // TODO: Get rid of this line after you implement yours
-    target.mV = mV;
+	//Get rid of this line after you implement yours
+	//target.mV = mV;
 
-    // TODO: Your code is here. It modifies target.mV for all y face velocities.
-    //
-    //
-    //
+	//Your code is here. It modifies target.mV for all y face velocities.
+	// f_buoy = vec3(0, -alpha*s + beta*(T - T_amb), 0);
+	// Where alpha and beta are non-negative constants which can be set by
+	// the user to achieve different behavior. Note that f_buoy = 0 where there's no
+	// smoke and the temp is at ambient level.
 
-    // and then save the result to our object
-    mV = target.mV;
+	// copy the current state of mV as we need to keep accumulating
+	target.mV = mV;
+
+    FOR_EACH_FACE {
+		if(isValidFace(MACGrid::Y, i, j, k)) {
+			//density and temp are defined at grid centers, will need to grab the two corresponding
+			//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
+			//is the interp done by getDensity and getTemp good enough
+			const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
+			const double f_buoy = -theBuoyancyAlpha*getDensity(facePos) +
+					theBuoyancyBeta*(getTemperature(facePos) - theBuoyancyAmbientTemperature);
+			target.mV(i,j,k) += (dt * f_buoy);
+		}
+	}
+
+	// and then save the result to our object
+	mV = target.mV;
 }
 
 void MACGrid::computeVorticityConfinement(double dt)
 {
-   // TODO: Calculate vorticity confinement forces
+	//Calculate vorticity confinement forces
 
-    // Apply the forces to the current velocity and store the result in target
+	// Apply the forces to the current velocity and store the result in target
 	// STARTED.
 
-    // TODO: Get rid of this line after you implement yours
+	//Get rid of this line after you implement yours
+	//target.mU = mU;
+	//target.mV = mV;
+	//target.mW = mW;
+
+	// TODO: Your code is here. It modifies target.mU,mV,mW for all faces.
+    //copy the current state of vel components as we need to keep accumulating
 	target.mU = mU;
 	target.mV = mV;
 	target.mW = mW;
+	//see fedkiw page 3 left, eq 9,10,11 and surrounding paras for vorticity confinement
+	//see fedkiw appendix page 6 bottom right for vorticity discretization calc
+	//see bridson siggraph page 58 and 59 for equations and discussion on vorticity confinement
+    //w = curl of velocity field ("vorticity")
+    //n = gradient of the magnitude of this vorticity
+	//N = normalize(n)
+	//f_conf = e * h * (N x w), e > 0 and controls confinement, h is cell size
+	//calculate the force on grid centers then for each face take average of the 2 corresponding grid cell centers
+	//border face can extrapolate or take the nearest grid center
 
-    // TODO: Your code is here. It modifies target.mU,mV,mW for all faces.
-    //
-    //
-    //
+	//need cell centered velocities for getting vorticity
+	GridData mUc = GridData(); mUc.initialize(0.0);
+	GridData mVc = GridData(); mVc.initialize(0.0);
+	GridData mWc = GridData(); mWc.initialize(0.0);
+	FOR_EACH_CELL {
+                //faces are left biased(-1/2 corresponds to i,j,k and +1/2 corresponds to (for xdir) i+1,j,k
+				mUc(i,j,k) = 0.5 * (mU(i, j, k) + mU(i+1, j  , k  ));
+				mVc(i,j,k) = 0.5 * (mV(i, j, k) + mV(i  , j+1, k  ));
+				mWc(i,j,k) = 0.5 * (mW(i, j, k) + mW(i  , j  , k+1));
+	}
 
-   // Then save the result to our object
-   mU = target.mU;
-   mV = target.mV;
-   mW = target.mW;
-}
+    //fedkiw notation in appendixA for vorticity
+	GridData w1 = GridData(); w1.initialize(0.0);
+	GridData w2 = GridData(); w2.initialize(0.0);
+	GridData w3 = GridData(); w3.initialize(0.0);
+	GridData wMag = GridData(); wMag.initialize(0.0);
+	const double invTwiceCellSize = 1.0 / (2.0 * theCellSize);
+	FOR_EACH_CELL {
+				const vec3 vort(
+						(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwiceCellSize,
+						(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwiceCellSize,
+						(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwiceCellSize
+				);
+				w1(i,j,k) = vort[0];
+				w2(i,j,k) = vort[1];
+				w3(i,j,k) = vort[2];
+				wMag(i,j,k) = vort.Length();
+	}
 
-void MACGrid::addExternalForces(double dt)
-{
-   computeBouyancy(dt);
-   computeVorticityConfinement(dt);
+	GridData fconfU = GridData(); fconfU.initialize(0.0);
+	GridData fconfV = GridData(); fconfV.initialize(0.0);
+	GridData fconfW = GridData(); fconfW.initialize(0.0);
+	FOR_EACH_CELL {
+				const vec3 vortGrad(
+						wMag(i+1,j,k) - wMag(i-1,j,k) * invTwiceCellSize,
+						wMag(i,j+1,k) - wMag(i,j-1,k) * invTwiceCellSize,
+						wMag(i,j,k+1) - wMag(i,j,k-1) * invTwiceCellSize
+				);
+				const vec3 N = vortGrad / (vortGrad.Length() + 0.0000001);
+				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
+                const vec3 fconf = theVorticityEpsilon * theCellSize * N.Cross(vort);
+				fconfU(i,j,k) = fconf[0];
+				fconfV(i,j,k) = fconf[1];
+				fconfW(i,j,k) = fconf[2];
+	}
+
+	FOR_EACH_FACE {
+                // tries to detect border face then extrapolates
+                if(isValidFace(MACGrid::X, i,j,k)) {
+					double fconfUface;
+					if (i == 0) {
+						const double fconfUextrap = (fconfU(i, j, k) - fconfU(i + 1, j, k)) * 0.5;
+						fconfUface = fconfU(i, j, k) + fconfUextrap;
+					} else if (i == theDim[MACGrid::X]) {
+						const double fconfUextrap = (fconfU(i - 1, j, k) - fconfU(i - 2, j, k)) * 0.5;
+						fconfUface = fconfU(i-1, j, k) + fconfUextrap;
+					} else {
+						fconfUface = (fconfU(i-1, j, k) + fconfU(i, j, k)) * 0.5;
+					}
+                    target.mU(i,j,k) += dt*fconfUface;
+				}
+				if(isValidFace(MACGrid::Y, i,j,k)) {
+					double fconfVface;
+					if (j == 0) {
+						const double fconfVextrap = (fconfV(i, j, k) - fconfV(i, j + 1, k)) * 0.5;
+						fconfVface = fconfV(i, j, k) + fconfVextrap;
+					} else if (j == theDim[MACGrid::Y]) {
+						const double fconfVextrap = (fconfV(i, j - 1, k) - fconfV(i, j - 2, k)) * 0.5;
+						fconfVface = fconfV(i, j-1, k) + fconfVextrap;
+					} else {
+						fconfVface = (fconfV(i, j-1, k) + fconfV(i, j, k)) * 0.5;
+					}
+					target.mV(i,j,k) += dt*fconfVface;
+				}
+				if(isValidFace(MACGrid::Z, i,j,k)) {
+					double fconfWface;
+					if (k == 0) {
+						const double fconfWextrap = (fconfW(i, j, k) - fconfW(i, j, k + 1)) * 0.5;
+						fconfWface = fconfW(i, j, k) + fconfWextrap;
+					} else if (k == theDim[MACGrid::Z]) {
+						const double fconfWextrap = (fconfW(i, j, k - 1) - fconfW(i, j, k - 2)) * 0.5;
+						fconfWface = fconfW(i, j, k-1) + fconfWextrap;
+					} else {
+						fconfWface = (fconfW(i, j, k-1) + fconfW(i, j, k)) * 0.5;
+					}
+					target.mW(i,j,k) += dt*fconfWface;
+				}
+	}
+
+
+	// Then save the result to our object
+	mU = target.mU;
+	mV = target.mV;
+	mW = target.mW;
 }
 
 void MACGrid::project(double dt)
 {
-   // TODO: Solve Ax = b for pressure
-   // 1. Contruct b
-   // 2. Construct A 
-   // 3. Solve for p
-   // Subtract pressure from our velocity and save in target
+	// TODO: Solve Ax = b for pressure
+	// 1. Contruct b
+	// 2. Construct A
+	// 3. Solve for p
+	// Subtract pressure from our velocity and save in target
 	// STARTED.
 
-    // TODO: Get rid of these 3 lines after you implement yours
-    target.mU = mU;
+	// TODO: Get rid of these 3 lines after you implement yours
+	target.mU = mU;
 	target.mV = mV;
 	target.mW = mW;
 
-    // TODO: Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
-    //
-    //
-    //
+	// TODO: Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
+	//
+	//
+	//
 
-	#ifdef _DEBUG
+#ifdef _DEBUG
 	// Check border velocities:
 	FOR_EACH_FACE {
 		if (isValidFace(MACGrid::X, i, j, k)) {
@@ -288,7 +360,7 @@ void MACGrid::project(double dt)
 
 		}
 		if (isValidFace(MACGrid::Y, i, j, k)) {
-			
+
 
 			if (j == 0) {
 				if (abs(target.mV(i,j,k)) > 0.0000001) {
@@ -306,7 +378,7 @@ void MACGrid::project(double dt)
 
 		}
 		if (isValidFace(MACGrid::Z, i, j, k)) {
-			
+
 			if (k == 0) {
 				if (abs(target.mW(i,j,k)) > 0.0000001) {
 					PRINT_LINE( "LOW Z:  " << target.mW(i,j,k) );
@@ -322,17 +394,17 @@ void MACGrid::project(double dt)
 			}
 		}
 	}
-	#endif
+#endif
 
 
-   // Then save the result to our object
-   mP = target.mP; 
-   mU = target.mU;
-   mV = target.mV;
-   mW = target.mW;
+	// Then save the result to our object
+	mP = target.mP;
+	mU = target.mU;
+	mV = target.mV;
+	mW = target.mW;
 
-	#ifdef _DEBUG
-   // IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
+#ifdef _DEBUG
+	// IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
    // TODO: Fix duplicate code:
    FOR_EACH_CELL {
 	   // Construct the vector of divergences d:
@@ -349,10 +421,61 @@ void MACGrid::project(double dt)
 			PRINT_LINE("Cell: " << i << ", " << j << ", " << k);
 		}
    }
-	#endif
-
+#endif
 
 }
+////////////////// END STEP 1/////////////////////
+
+void MACGrid::advectTemperature(double dt)
+{
+    //Calculate new temp and store in target
+
+    //Get rid of this line after you implement yours
+    //target.mT = mT;
+
+    //Your code is here. It builds target.mT for all cells.
+    FOR_EACH_CELL {
+		target.mT(i,j,k) = getTemperature( getRewoundPosition( getCenter(i,j,k), dt) );
+	}
+
+    // Then save the result to our object
+    mT = target.mT;
+}
+
+void MACGrid::advectDensity(double dt)
+{
+    //Calculate new densitities and store in target
+
+    //Get rid of this line after you implement yours
+    //target.mD = mD;
+
+    //Your code is here. It builds target.mD for all cells.
+	FOR_EACH_CELL {
+		target.mD(i,j,k) = getDensity( getRewoundPosition( getCenter(i,j,k), dt) );
+	}
+
+    // Then save the result to our object
+    mD = target.mD;
+}
+
+
+void MACGrid::advectRenderingParticles(double dt) {
+	rendering_particles_vel.resize(rendering_particles.size());
+	for (size_t p = 0; p < rendering_particles.size(); p++) {
+		vec3 currentPosition = rendering_particles[p];
+        vec3 currentVelocity = getVelocity(currentPosition);
+        vec3 nextPosition = currentPosition + currentVelocity * dt;
+        vec3 clippedNextPosition = clipToGrid(nextPosition, currentPosition);
+        // Keep going...
+        vec3 nextVelocity = getVelocity(clippedNextPosition);
+        vec3 averageVelocity = (currentVelocity + nextVelocity) / 2.0;
+        vec3 betterNextPosition = currentPosition + averageVelocity * dt;
+        vec3 clippedBetterNextPosition = clipToGrid(betterNextPosition, currentPosition);
+        rendering_particles[p] = clippedBetterNextPosition;
+		rendering_particles_vel[p] = averageVelocity;
+	}
+}
+
 
 vec3 MACGrid::getVelocity(const vec3& pt)
 {
@@ -520,6 +643,7 @@ bool MACGrid::isValidFace(int dimension, int i, int j, int k)
 
 	return true;
 }
+
 
 
 vec3 MACGrid::getFacePosition(int dimension, int i, int j, int k)
