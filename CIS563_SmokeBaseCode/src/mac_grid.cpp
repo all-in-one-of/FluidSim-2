@@ -258,9 +258,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 	GridData fconfW = GridData(); fconfW.initialize(0.0);
 	FOR_EACH_CELL {
 				const vec3 vortGrad(
-						wMag(i+1,j,k) - wMag(i-1,j,k) * invTwiceCellSize,
-						wMag(i,j+1,k) - wMag(i,j-1,k) * invTwiceCellSize,
-						wMag(i,j,k+1) - wMag(i,j,k-1) * invTwiceCellSize
+						(wMag(i+1,j,k) - wMag(i-1,j,k)) * invTwiceCellSize,
+						(wMag(i,j+1,k) - wMag(i,j-1,k)) * invTwiceCellSize,
+						(wMag(i,j,k+1) - wMag(i,j,k-1)) * invTwiceCellSize
 				);
 				const vec3 N = vortGrad / (vortGrad.Length() + 0.0000001);
 				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
@@ -322,22 +322,77 @@ void MACGrid::computeVorticityConfinement(double dt)
 
 void MACGrid::project(double dt)
 {
-	// TODO: Solve Ax = b for pressure
-	// 1. Contruct b
+	// Solve Ap = d for pressure
+	// 1. Contruct d
 	// 2. Construct A
 	// 3. Solve for p
 	// Subtract pressure from our velocity and save in target
 	// STARTED.
 
-	// TODO: Get rid of these 3 lines after you implement yours
+	// Get rid of these 3 lines after you implement yours
+	//target.mU = mU;
+	//target.mV = mV;
+	//target.mW = mW;
+
+	// Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
+
+
+	//construct d
+	// copy state of vel to target
 	target.mU = mU;
 	target.mV = mV;
 	target.mW = mW;
+	GridData d = GridData(); d.initialize(0.0);
+	const double AMatrixCoeffDivideAndInvCellSize = ((theAirDensity*theCellSize*theCellSize) / dt) * (1.0 / theCellSize);
+    FOR_EACH_CELL {
+				d(i,j,k) = AMatrixCoeffDivideAndInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
+																(target.mV(i,j+1,k) - target.mV(i,j,k)) +
+											                    (target.mW(i,j,k+1) - target.mW(i,j,k))
+											                  );
+	}
 
-	// TODO: Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
-	//
-	//
-	//
+	//construct A
+	// A is constructed for solid static bounding box already
+	// if there are any solid moving objects, AMatrix needs to be constructed
+	// and its preconditioner calculated every time
+	//calculateAMatrix();
+	//calculatePreconditioner(AMatrix);
+
+
+	//solve for p
+	preconditionedConjugateGradient(AMatrix, target.mP, d, 300, 0.001);
+	// TODO: multiply by constant mentioned in course notes?
+
+	//subtract off the pressure gradients from the velocity fields.
+	//bottom page 39 in bridson course notes, note: the face velocities for
+	//solid boundaries must equal the velocity of teh solid boundary, in this case, 0
+	const double c = dt / (theAirDensity * theCellSize);
+	FOR_EACH_FACE {
+				// set to vel of solid if face touches solid and solve for pressure there on other side
+				// as described by 4.10 on page 39 of bridson course notes
+				if(isValidFace(MACGrid::X, i,j,k)) {
+					if (i == 0 || i == theDim[MACGrid::X]) {
+						target.mU(i,j,k) = 0;
+                    } else {
+						target.mU(i,j,k) -= (c*(target.mP(i,j,k) - target.mP(i-1,j,k)));
+					}
+                }
+				if(isValidFace(MACGrid::Y, i,j,k)) {
+					if (j == 0 || j == theDim[MACGrid::Y]) {
+						target.mV(i,j,k) = 0;
+					} else {
+						target.mV(i,j,k) -= (c*(target.mP(i,j,k) - target.mP(i,j-1,k)));
+					}
+				}
+				if(isValidFace(MACGrid::Z, i,j,k)) {
+					if (k == 0 || k == theDim[MACGrid::Z]) {
+						target.mW(i,j,k) = 0;
+					} else {
+						target.mW(i,j,k) -= (c*(target.mP(i,j,k) - target.mP(i,j,k-1)));
+					}
+				}
+	}
+
 
 #ifdef _DEBUG
 	// Check border velocities:
