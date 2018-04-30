@@ -15,6 +15,8 @@
 // Globals
 MACGrid target;
 
+#define CHECK_DIVERGENCE
+
 
 // NOTE: x -> cols, z -> rows, y -> stacks
 MACGrid::RenderMode MACGrid::theRenderMode = RenderMode::SHEETS;
@@ -97,15 +99,16 @@ void MACGrid::updateSources()
     // Set initial values for density, temperature, velocity
 
     //there's an initial block of pink smoke in the grid where these get set
+	const int depth = theDim[MACGrid::Z] >> 1;
     for(int i=6; i<12;i++){
         for(int j=0; j<5; j++){
-            mV(i,j+1,0) = 2.0;
-            mD(i,j,0) = 1.0;
-            mT(i,j,0) = 1.0;
+            mV(i,j+1,depth) = 2.0;
+            mD(i,j,depth) = 1.0;
+            mT(i,j,depth) = 1.0;
 
-            mV(i,j+2,0) = 2.0;
-            mD(i,j,0) = 1.0;
-            mT(i,j,0) = 1.0;
+            mV(i,j+2,depth) = 2.0;
+            mD(i,j,depth) = 1.0;
+            mT(i,j,depth) = 1.0;
         }
     }
 
@@ -152,15 +155,16 @@ void MACGrid::advectVelocity(double dt)
 				}
 	}
 
+
     // Then save the result to our object
     mU = target.mU;
     mV = target.mV;
     mW = target.mW;
 
+
 }
 
-void MACGrid::addExternalForces(double dt)
-{
+void MACGrid::addExternalForces(double dt) {
 	computeBouyancy(dt);
 	computeVorticityConfinement(dt);
 }
@@ -189,25 +193,20 @@ void MACGrid::computeBouyancy(double dt)
 	}
 
     FOR_EACH_FACE {
-				if(isValidFace(MACGrid::Y, i, j, k) ) {
+				if(isValidFace(MACGrid::Y, i, j, k) && j != 0  && j != theDim[MACGrid::Y]) {
 					//density and temp are defined at grid centers, will need to grab the two corresponding
 					//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
 					//is the interp done by getDensity and getTemp good enough
 					//const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
 					//const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
 					//					  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
-					double fbuoy;
-					if(j == 0 || j == theDim[MACGrid::Y]) {
-						fbuoy = 0.5 * fbuoy_c(i,j,k);
-					} else {
-						fbuoy = 0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k));
-					}
-					target.mV(i, j, k) += (dt * fbuoy);
+					target.mV(i, j, k) += (0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k))); //dt not needed? looks better without at least...
 				}
 	}
-
 	// and then save the result to our object
 	mV = target.mV;
+
+
 }
 
 void MACGrid::computeVorticityConfinement(double dt)
@@ -243,9 +242,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 	GridData mWc = GridData(); mWc.initialize(0.0);
 	FOR_EACH_CELL {
                 //faces are left biased(-1/2 corresponds to i,j,k and +1/2 corresponds to (for xdir) i+1,j,k
-				mUc(i,j,k) = 0.5 * (mU(i, j, k) + mU(i+1, j  , k  ));
-				mVc(i,j,k) = 0.5 * (mV(i, j, k) + mV(i  , j+1, k  ));
-				mWc(i,j,k) = 0.5 * (mW(i, j, k) + mW(i  , j  , k+1));
+				mUc(i,j,k) = 0.5 * (target.mU(i, j, k) + target.mU(i+1, j  , k  ));
+				mVc(i,j,k) = 0.5 * (target.mV(i, j, k) + target.mV(i  , j+1, k  ));
+				mWc(i,j,k) = 0.5 * (target.mW(i, j, k) + target.mW(i  , j  , k+1));
 	}
 
     //fedkiw notation in appendixA for vorticity
@@ -254,11 +253,22 @@ void MACGrid::computeVorticityConfinement(double dt)
 	GridData w3 = GridData(); w3.initialize(0.0);
 	GridData wMag = GridData(); wMag.initialize(0.0);
 	const double invTwiceCellSize = 1.0 / (2.0 * theCellSize);
+	const double invOneAndHalfCellSize = 1.0 / (1.5 * theCellSize);
+	const double invCellSize = 1.0 / (theCellSize);
 	FOR_EACH_CELL {
 				const vec3 vort(
-						(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwiceCellSize,
-						(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwiceCellSize,
-						(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwiceCellSize
+                        //the way fedkiw mentions, but produces divergent field
+						//(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwiceCellSize,
+						//(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwiceCellSize,
+						//(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwiceCellSize
+						//same indexing except using cell faces, biased left, most divergence stable
+						//(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invOneAndHalfCellSize,
+						//(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invOneAndHalfCellSize,
+						//(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invOneAndHalfCellSize
+                        //indexing for faces on either side of cell, no bias, similar divergence stability
+						(target.mW(i,j+1,k) - target.mW(i,j,k) - target.mV(i,j,k+1) + target.mV(i,j,k)) * invCellSize,
+						(target.mU(i,j,k+1) - target.mU(i,j,k) - target.mW(i+1,j,k) + target.mW(i,j,k)) * invCellSize,
+						(target.mV(i+1,j,k) - target.mV(i,j,k) - target.mU(i,j+1,k) + target.mU(i,j,k)) * invCellSize
 				);
 				w1(i,j,k) = vort[0];
 				w2(i,j,k) = vort[1];
@@ -266,78 +276,49 @@ void MACGrid::computeVorticityConfinement(double dt)
 				wMag(i,j,k) = vort.Length();
 	}
 
-	GridData fconfU = GridData(); fconfU.initialize(0.0);
-	GridData fconfV = GridData(); fconfV.initialize(0.0);
-	GridData fconfW = GridData(); fconfW.initialize(0.0);
 	FOR_EACH_CELL {
+                //prefetch for later
+				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
+
 				const vec3 vortGrad(
 						(wMag(i+1,j,k) - wMag(i-1,j,k)) * invTwiceCellSize,
 						(wMag(i,j+1,k) - wMag(i,j-1,k)) * invTwiceCellSize,
 						(wMag(i,j,k+1) - wMag(i,j,k-1)) * invTwiceCellSize
 				);
 				const vec3 N = vortGrad / (vortGrad.Length() + 0.0000001);
-				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
                 const vec3 fconf = theVorticityEpsilon * theCellSize * N.Cross(vort);
-				fconfU(i,j,k) = fconf[0];
-				fconfV(i,j,k) = fconf[1];
-				fconfW(i,j,k) = fconf[2];
-	}
 
-	FOR_EACH_FACE {
-                // tries to detect border face then extrapolates, to that face since there aren't two cells to average
-                // actually prob shouldn't extrapolate for solid wall boundaries
-                if(isValidFace(MACGrid::X, i,j,k)) {
-					double fconfUface;
-					//if (i == 0) {
-					//	const double fconfUextrap = (fconfU(i, j, k) - fconfU(i + 1, j, k)) * 0.5;
-					//	fconfUface = fconfU(i, j, k) + fconfUextrap;
-					//} else if (i == theDim[MACGrid::X]) {
-					//	const double fconfUextrap = (fconfU(i - 1, j, k) - fconfU(i - 2, j, k)) * 0.5;
-					//	fconfUface = fconfU(i-1, j, k) + fconfUextrap;
-					if(i == 0 || i == theDim[MACGrid::X]){
-						fconfUface = 0.5 * fconfU(i,j,k);
-					} else {
-						fconfUface = 0.5 * (fconfU(i, j, k) + fconfU(i-1, j, k));
-					}
-                    target.mU(i,j,k) += dt*fconfUface;
-				}
-				if(isValidFace(MACGrid::Y, i,j,k)) {
-					double fconfVface;
-					//if (j == 0) {
-					//	const double fconfVextrap = (fconfV(i, j, k) - fconfV(i, j + 1, k)) * 0.5;
-					//	fconfVface = fconfV(i, j, k) + fconfVextrap;
-					//} else if (j == theDim[MACGrid::Y]) {
-					//	const double fconfVextrap = (fconfV(i, j - 1, k) - fconfV(i, j - 2, k)) * 0.5;
-					//	fconfVface = fconfV(i, j-1, k) + fconfVextrap;
-					if(j == 0 || j == theDim[MACGrid::Y]){
-						fconfVface = 0.5 * fconfV(i,j,k);
-					} else {
-						fconfVface = 0.5 * (fconfV(i, j, k) + fconfV(i, j-1, k));
-					}
-					target.mV(i,j,k) += dt*fconfVface;
-				}
-				if(isValidFace(MACGrid::Z, i,j,k)) {
-					double fconfWface;
-					//if (k == 0) {
-					//	const double fconfWextrap = (fconfW(i, j, k) - fconfW(i, j, k + 1)) * 0.5;
-					//	fconfWface = fconfW(i, j, k) + fconfWextrap;
-					//} else if (k == theDim[MACGrid::Z]) {
-					//	const double fconfWextrap = (fconfW(i, j, k - 1) - fconfW(i, j, k - 2)) * 0.5;
-					//	fconfWface = fconfW(i, j, k-1) + fconfWextrap;
-					if(k == 0 || k == theDim[MACGrid::Z]){
-						fconfWface = 0.5 * fconfW(i,j,k);
-					} else {
-						fconfWface = 0.5 * (fconfW(i, j, k) + fconfW(i, j, k-1));
-					}
-					target.mW(i,j,k) += dt*fconfWface;
-				}
+				//just push info to faces of the cell here instead of doing another loop
+				if(isValidFace(MACGrid::X, i,j,k)   && i != 0 && i != theDim[MACGrid::X]) { target.mU(i,j,k)   += (0.5*fconf[0]);}
+				if(isValidFace(MACGrid::X, i+1,j,k) && i != 0 && i != theDim[MACGrid::X]) { target.mU(i+1,j,k) += (0.5*fconf[0]);}
+				if(isValidFace(MACGrid::Y, i,j,k)   && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j,k)   += (0.5*fconf[1]);}
+				if(isValidFace(MACGrid::Y, i,j+1,k) && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j+1,k) += (0.5*fconf[1]);}
+				if(isValidFace(MACGrid::Z, i,j,k)   && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k)   += (0.5*fconf[2]);}
+				if(isValidFace(MACGrid::Z, i,j,k+1) && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k+1) += (0.5*fconf[2]);}
 	}
-
 
 	// Then save the result to our object
 	mU = target.mU;
 	mV = target.mV;
 	mW = target.mW;
+
+
+#ifdef CHECK_DIVERGENCE
+	GridData d = GridData(); d.initialize(0.0);
+	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
+	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
+	FOR_EACH_CELL {
+				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (mU(i+1,j,k) - mU(i,j,k)) +
+																   (mV(i,j+1,k) - mV(i,j,k)) +
+																   (mW(i,j,k+1) - mW(i,j,k))
+				);
+			}
+
+	double total = 0;
+	FOR_EACH_CELL { total += d(i,j,k); }
+	if(total > 0.0000001) { PRINT_LINE("Non-zero Divergence: " << total); }
+#endif
+
 }
 
 void MACGrid::project(double dt)
@@ -365,13 +346,15 @@ void MACGrid::project(double dt)
 	target.mV = mV;
 	target.mW = mW;
 	GridData d = GridData(); d.initialize(0.0);
-	const double AMatrixCoeffDivideAndNegInvCellSize = ((theAirDensity*theCellSize*theCellSize) / dt ) * (-1.0 / theCellSize);
+	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
+	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
     FOR_EACH_CELL {
 				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
 																   (target.mV(i,j+1,k) - target.mV(i,j,k)) +
 											                       (target.mW(i,j,k+1) - target.mW(i,j,k))
 											                     );
 	}
+
 
 	//construct A
 	// A is constructed for solid static bounding box already
@@ -382,8 +365,8 @@ void MACGrid::project(double dt)
 
 
 	//solve for p
-    double tol = 0.08;
-	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 20, tol)) {tol *= 2;}
+    double tol = 0.00001;
+	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 100, tol)) {tol *= 2;}
 
 	//subtract off the pressure gradients from the velocity fields.
 	//bottom page 39 in bridson course notes, note: the face velocities for
@@ -415,62 +398,78 @@ void MACGrid::project(double dt)
 				}
 	}
 
-#define CHECK_DIVERGENCE
 #ifdef CHECK_DIVERGENCE
 	// Check border velocities:
 	FOR_EACH_FACE {
-		if (isValidFace(MACGrid::X, i, j, k)) {
+				if (isValidFace(MACGrid::X, i, j, k)) {
 
-			if (i == 0) {
-				if (abs(target.mU(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "LOW X:  " << target.mU(i,j,k) );
-					//target.mU(i,j,k) = 0;
+					if (i == 0) {
+						if (abs(target.mU(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "LOW X:  " << target.mU(i,j,k) );
+							//target.mU(i,j,k) = 0;
+						}
+					}
+
+					if (i == theDim[MACGrid::X]) {
+						if (abs(target.mU(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "HIGH X: " << target.mU(i,j,k) );
+							//target.mU(i,j,k) = 0;
+						}
+					}
+
+				}
+				if (isValidFace(MACGrid::Y, i, j, k)) {
+
+
+					if (j == 0) {
+						if (abs(target.mV(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "LOW Y:  " << target.mV(i,j,k) );
+							//target.mV(i,j,k) = 0;
+						}
+					}
+
+					if (j == theDim[MACGrid::Y]) {
+						if (abs(target.mV(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "HIGH Y: " << target.mV(i,j,k) );
+							//target.mV(i,j,k) = 0;
+						}
+					}
+
+				}
+				if (isValidFace(MACGrid::Z, i, j, k)) {
+
+					if (k == 0) {
+						if (abs(target.mW(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "LOW Z:  " << target.mW(i,j,k) );
+							//target.mW(i,j,k) = 0;
+						}
+					}
+
+					if (k == theDim[MACGrid::Z]) {
+						if (abs(target.mW(i,j,k)) > 0.0000001) {
+							PRINT_LINE( "HIGH Z: " << target.mW(i,j,k) );
+							//target.mW(i,j,k) = 0;
+						}
+					}
 				}
 			}
-
-			if (i == theDim[MACGrid::X]) {
-				if (abs(target.mU(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "HIGH X: " << target.mU(i,j,k) );
-					//target.mU(i,j,k) = 0;
+	// IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
+	// TODO: Fix duplicate code:
+	FOR_EACH_CELL {
+				// Construct the vector of divergences d:
+				double velLowX = target.mU(i,j,k);
+				double velHighX = target.mU(i+1,j,k);
+				double velLowY = target.mV(i,j,k);
+				double velHighY = target.mV(i,j+1,k);
+				double velLowZ = target.mW(i,j,k);
+				double velHighZ = target.mW(i,j,k+1);
+				double divergence = ((velHighX - velLowX) + (velHighY - velLowY) + (velHighZ - velLowZ)) / theCellSize;
+				if (abs(divergence) > 0.02 ) {
+					PRINT_LINE("WARNING: Divergent! ");
+					PRINT_LINE("Divergence: " << divergence);
+					PRINT_LINE("Cell: " << i << ", " << j << ", " << k);
 				}
 			}
-
-		}
-		if (isValidFace(MACGrid::Y, i, j, k)) {
-
-
-			if (j == 0) {
-				if (abs(target.mV(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "LOW Y:  " << target.mV(i,j,k) );
-					//target.mV(i,j,k) = 0;
-				}
-			}
-
-			if (j == theDim[MACGrid::Y]) {
-				if (abs(target.mV(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "HIGH Y: " << target.mV(i,j,k) );
-					//target.mV(i,j,k) = 0;
-				}
-			}
-
-		}
-		if (isValidFace(MACGrid::Z, i, j, k)) {
-
-			if (k == 0) {
-				if (abs(target.mW(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "LOW Z:  " << target.mW(i,j,k) );
-					//target.mW(i,j,k) = 0;
-				}
-			}
-
-			if (k == theDim[MACGrid::Z]) {
-				if (abs(target.mW(i,j,k)) > 0.0000001) {
-					PRINT_LINE( "HIGH Z: " << target.mW(i,j,k) );
-					//target.mW(i,j,k) = 0;
-				}
-			}
-		}
-	}
 #endif
 
 
@@ -480,25 +479,6 @@ void MACGrid::project(double dt)
 	mV = target.mV;
 	mW = target.mW;
 
-#ifdef CHECK_DIVERGENCE
-	// IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
-   // TODO: Fix duplicate code:
-   FOR_EACH_CELL {
-	   // Construct the vector of divergences d:
-        double velLowX = mU(i,j,k);
-        double velHighX = mU(i+1,j,k);
-        double velLowY = mV(i,j,k);
-        double velHighY = mV(i,j+1,k);
-        double velLowZ = mW(i,j,k);
-        double velHighZ = mW(i,j,k+1);
-		double divergence = ((velHighX - velLowX) + (velHighY - velLowY) + (velHighZ - velLowZ)) / theCellSize;
-		if (abs(divergence) > 0.02 ) {
-			PRINT_LINE("WARNING: Divergent! ");
-			PRINT_LINE("Divergence: " << divergence);
-			PRINT_LINE("Cell: " << i << ", " << j << ", " << k);
-		}
-   }
-#endif
 
 }
 ////////////////// END STEP 1/////////////////////
