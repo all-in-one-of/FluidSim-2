@@ -17,7 +17,7 @@ MACGrid target;
 
 
 // NOTE: x -> cols, z -> rows, y -> stacks
-MACGrid::RenderMode MACGrid::theRenderMode = SHEETS;
+MACGrid::RenderMode MACGrid::theRenderMode = RenderMode::CUBES;
 bool MACGrid::theDisplayVel = false;//true
 
 #define FOR_EACH_CELL \
@@ -143,13 +143,25 @@ void MACGrid::advectVelocity(double dt)
 
     //Your code is here. It builds target.mU, target.mV and target.mW for all faces
 	FOR_EACH_FACE {
-		if (isValidFace(MACGrid::X, i, j, k)) {
-        	target.mU(i,j,k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i,j,k), dt));
-		} if (isValidFace(MACGrid::Y, i, j, k)) {
-			target.mV(i,j,k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i,j,k), dt));
-		} if (isValidFace(MACGrid::Z, i, j, k)) {
-			target.mW(i,j,k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i,j,k), dt));
-		}
+				if (isValidFace(MACGrid::X, i, j, k)) {
+					if (i == 0 || i == theDim[MACGrid::X]) {
+						target.mU(i,j,k) = 0;
+					} else {
+						target.mU(i, j, k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i, j, k), dt));
+					}
+				} if (isValidFace(MACGrid::Y, i, j, k)) {
+					if (j == 0 || j == theDim[MACGrid::Y]) {
+						target.mV(i,j,k) = 0;
+					} else {
+						target.mV(i, j, k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i, j, k), dt));
+					}
+				} if (isValidFace(MACGrid::Z, i, j, k)) {
+					if (k == 0 || k == theDim[MACGrid::Z]) {
+						target.mW(i,j,k) = 0;
+					} else {
+                        target.mW(i, j, k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i, j, k), dt));
+                    }
+				}
 	}
 
     // Then save the result to our object
@@ -182,15 +194,19 @@ void MACGrid::computeBouyancy(double dt)
 	target.mV = mV;
 
     FOR_EACH_FACE {
-		if(isValidFace(MACGrid::Y, i, j, k)) {
-			//density and temp are defined at grid centers, will need to grab the two corresponding
-			//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
-			//is the interp done by getDensity and getTemp good enough
-			const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
-			const double f_buoy = -theBuoyancyAlpha*getDensity(facePos) +
-					theBuoyancyBeta*(getTemperature(facePos) - theBuoyancyAmbientTemperature);
-			target.mV(i,j,k) += (dt * f_buoy);
-		}
+				if(isValidFace(MACGrid::Y, i, j, k) ) {
+					//density and temp are defined at grid centers, will need to grab the two corresponding
+					//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
+					//is the interp done by getDensity and getTemp good enough
+					if(j == 0 && j == theDim[MACGrid::Y]) {
+						//do nothing, face vel on grid borders is 0
+					} else {
+						const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
+						const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
+											  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
+						target.mV(i, j, k) += (dt * f_buoy);
+					}
+				}
 	}
 
 	// and then save the result to our object
@@ -272,14 +288,17 @@ void MACGrid::computeVorticityConfinement(double dt)
 
 	FOR_EACH_FACE {
                 // tries to detect border face then extrapolates, to that face since there aren't two cells to average
+                // actually prob shouldn't extrapolate for solid wall boundaries
                 if(isValidFace(MACGrid::X, i,j,k)) {
 					double fconfUface;
-					if (i == 0) {
-						const double fconfUextrap = (fconfU(i, j, k) - fconfU(i + 1, j, k)) * 0.5;
-						fconfUface = fconfU(i, j, k) + fconfUextrap;
-					} else if (i == theDim[MACGrid::X]) {
-						const double fconfUextrap = (fconfU(i - 1, j, k) - fconfU(i - 2, j, k)) * 0.5;
-						fconfUface = fconfU(i-1, j, k) + fconfUextrap;
+					//if (i == 0) {
+					//	const double fconfUextrap = (fconfU(i, j, k) - fconfU(i + 1, j, k)) * 0.5;
+					//	fconfUface = fconfU(i, j, k) + fconfUextrap;
+					//} else if (i == theDim[MACGrid::X]) {
+					//	const double fconfUextrap = (fconfU(i - 1, j, k) - fconfU(i - 2, j, k)) * 0.5;
+					//	fconfUface = fconfU(i-1, j, k) + fconfUextrap;
+					if(i == 0 || i == theDim[MACGrid::X]){
+						fconfUface = 0;
 					} else {
 						fconfUface = (fconfU(i-1, j, k) + fconfU(i, j, k)) * 0.5;
 					}
@@ -287,12 +306,14 @@ void MACGrid::computeVorticityConfinement(double dt)
 				}
 				if(isValidFace(MACGrid::Y, i,j,k)) {
 					double fconfVface;
-					if (j == 0) {
-						const double fconfVextrap = (fconfV(i, j, k) - fconfV(i, j + 1, k)) * 0.5;
-						fconfVface = fconfV(i, j, k) + fconfVextrap;
-					} else if (j == theDim[MACGrid::Y]) {
-						const double fconfVextrap = (fconfV(i, j - 1, k) - fconfV(i, j - 2, k)) * 0.5;
-						fconfVface = fconfV(i, j-1, k) + fconfVextrap;
+					//if (j == 0) {
+					//	const double fconfVextrap = (fconfV(i, j, k) - fconfV(i, j + 1, k)) * 0.5;
+					//	fconfVface = fconfV(i, j, k) + fconfVextrap;
+					//} else if (j == theDim[MACGrid::Y]) {
+					//	const double fconfVextrap = (fconfV(i, j - 1, k) - fconfV(i, j - 2, k)) * 0.5;
+					//	fconfVface = fconfV(i, j-1, k) + fconfVextrap;
+					if(j == 0 || j == theDim[MACGrid::Y]){
+						fconfVface = 0;
 					} else {
 						fconfVface = (fconfV(i, j-1, k) + fconfV(i, j, k)) * 0.5;
 					}
@@ -300,12 +321,14 @@ void MACGrid::computeVorticityConfinement(double dt)
 				}
 				if(isValidFace(MACGrid::Z, i,j,k)) {
 					double fconfWface;
-					if (k == 0) {
-						const double fconfWextrap = (fconfW(i, j, k) - fconfW(i, j, k + 1)) * 0.5;
-						fconfWface = fconfW(i, j, k) + fconfWextrap;
-					} else if (k == theDim[MACGrid::Z]) {
-						const double fconfWextrap = (fconfW(i, j, k - 1) - fconfW(i, j, k - 2)) * 0.5;
-						fconfWface = fconfW(i, j, k-1) + fconfWextrap;
+					//if (k == 0) {
+					//	const double fconfWextrap = (fconfW(i, j, k) - fconfW(i, j, k + 1)) * 0.5;
+					//	fconfWface = fconfW(i, j, k) + fconfWextrap;
+					//} else if (k == theDim[MACGrid::Z]) {
+					//	const double fconfWextrap = (fconfW(i, j, k - 1) - fconfW(i, j, k - 2)) * 0.5;
+					//	fconfWface = fconfW(i, j, k-1) + fconfWextrap;
+					if(k == 0 || k == theDim[MACGrid::Z]){
+						fconfWface = 0;
 					} else {
 						fconfWface = (fconfW(i, j, k-1) + fconfW(i, j, k)) * 0.5;
 					}
@@ -337,18 +360,20 @@ void MACGrid::project(double dt)
 	// Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
 
 
-	//construct d
+	//construct d, see eq 4.22 on page 42 of bridsons course notes, see para 3 and 4 for explanation of AMatrix.
+	// and the coefficients moved to the rhs of eq 4.22
+	// velocities on the solid wall boundaries should be 0 before we set d
 	// copy state of vel to target
 	target.mU = mU;
 	target.mV = mV;
 	target.mW = mW;
 	GridData d = GridData(); d.initialize(0.0);
-	const double AMatrixCoeffDivideAndInvCellSize = ((theAirDensity*theCellSize*theCellSize) / dt) * (1.0 / theCellSize);
+	const double AMatrixCoeffDivideAndNegInvCellSize = ((theAirDensity*theCellSize*theCellSize) / dt ) * (-1.0 / theCellSize);
     FOR_EACH_CELL {
-				d(i,j,k) = AMatrixCoeffDivideAndInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
-																(target.mV(i,j+1,k) - target.mV(i,j,k)) +
-											                    (target.mW(i,j,k+1) - target.mW(i,j,k))
-											                  );
+				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
+																   (target.mV(i,j+1,k) - target.mV(i,j,k)) +
+											                       (target.mW(i,j,k+1) - target.mW(i,j,k))
+											                     );
 	}
 
 	//construct A
@@ -360,8 +385,8 @@ void MACGrid::project(double dt)
 
 
 	//solve for p
-	preconditionedConjugateGradient(AMatrix, target.mP, d, 300, 0.001);
-	// TODO: multiply by constant mentioned in course notes?
+    double tol = 0.08;
+	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 20, tol)) {tol *= 2;}
 
 	//subtract off the pressure gradients from the velocity fields.
 	//bottom page 39 in bridson course notes, note: the face velocities for
@@ -796,7 +821,7 @@ bool MACGrid::preconditionedConjugateGradient(const GridDataMatrix & A, GridData
 		//r -= alpha * z;
 
 		if (maxMagnitude(r) <= tolerance) {
-			//PRINT_LINE("PCG converged in " << (iteration + 1) << " iterations.");
+			//PRINT_LINE("PCG converged in " << (iteration + 1) << " iterations, tol: " << tolerance );
 			return true; //return p;
 		}
 
@@ -814,9 +839,8 @@ bool MACGrid::preconditionedConjugateGradient(const GridDataMatrix & A, GridData
 		sigma = sigmaNew;
 	}
 
-	PRINT_LINE( "PCG didn't converge!" );
+	PRINT_LINE( "PCG didn't converge with tolerance: " << tolerance );
 	return false;
-
 }
 
 
