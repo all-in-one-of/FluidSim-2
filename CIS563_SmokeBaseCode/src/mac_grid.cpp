@@ -17,7 +17,7 @@ MACGrid target;
 
 
 // NOTE: x -> cols, z -> rows, y -> stacks
-MACGrid::RenderMode MACGrid::theRenderMode = RenderMode::CUBES;
+MACGrid::RenderMode MACGrid::theRenderMode = RenderMode::SHEETS;
 bool MACGrid::theDisplayVel = false;//true
 
 #define FOR_EACH_CELL \
@@ -144,23 +144,11 @@ void MACGrid::advectVelocity(double dt)
     //Your code is here. It builds target.mU, target.mV and target.mW for all faces
 	FOR_EACH_FACE {
 				if (isValidFace(MACGrid::X, i, j, k)) {
-					if (i == 0 || i == theDim[MACGrid::X]) {
-						target.mU(i,j,k) = 0;
-					} else {
-						target.mU(i, j, k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i, j, k), dt));
-					}
+					target.mU(i, j, k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i, j, k), dt));
 				} if (isValidFace(MACGrid::Y, i, j, k)) {
-					if (j == 0 || j == theDim[MACGrid::Y]) {
-						target.mV(i,j,k) = 0;
-					} else {
-						target.mV(i, j, k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i, j, k), dt));
-					}
+					target.mV(i, j, k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i, j, k), dt));
 				} if (isValidFace(MACGrid::Z, i, j, k)) {
-					if (k == 0 || k == theDim[MACGrid::Z]) {
-						target.mW(i,j,k) = 0;
-					} else {
-                        target.mW(i, j, k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i, j, k), dt));
-                    }
+					target.mW(i, j, k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i, j, k), dt));
 				}
 	}
 
@@ -193,19 +181,28 @@ void MACGrid::computeBouyancy(double dt)
 	// copy the current state of mV as we need to keep accumulating
 	target.mV = mV;
 
+    //calc the force at grid centers then the face force is the ave of the 2 neighboring cells
+	GridData fbuoy_c = GridData(); fbuoy_c.initialize(0.0);
+	FOR_EACH_CELL {
+				fbuoy_c(i,j,k) = -theBuoyancyAlpha * mD(i,j,k) +
+									  theBuoyancyBeta * (mT(i,j,k) - theBuoyancyAmbientTemperature);
+	}
+
     FOR_EACH_FACE {
 				if(isValidFace(MACGrid::Y, i, j, k) ) {
 					//density and temp are defined at grid centers, will need to grab the two corresponding
 					//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
 					//is the interp done by getDensity and getTemp good enough
-					if(j == 0 && j == theDim[MACGrid::Y]) {
-						//do nothing, face vel on grid borders is 0
+					//const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
+					//const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
+					//					  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
+					double fbuoy;
+					if(j == 0 || j == theDim[MACGrid::Y]) {
+						fbuoy = 0.5 * fbuoy_c(i,j,k);
 					} else {
-						const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
-						const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
-											  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
-						target.mV(i, j, k) += (dt * f_buoy);
+						fbuoy = 0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k));
 					}
+					target.mV(i, j, k) += (dt * fbuoy);
 				}
 	}
 
@@ -225,7 +222,7 @@ void MACGrid::computeVorticityConfinement(double dt)
 	//target.mV = mV;
 	//target.mW = mW;
 
-	// TODO: Your code is here. It modifies target.mU,mV,mW for all faces.
+	// Your code is here. It modifies target.mU,mV,mW for all faces.
     //copy the current state of vel components as we need to keep accumulating
 	target.mU = mU;
 	target.mV = mV;
@@ -298,9 +295,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 					//	const double fconfUextrap = (fconfU(i - 1, j, k) - fconfU(i - 2, j, k)) * 0.5;
 					//	fconfUface = fconfU(i-1, j, k) + fconfUextrap;
 					if(i == 0 || i == theDim[MACGrid::X]){
-						fconfUface = 0;
+						fconfUface = 0.5 * fconfU(i,j,k);
 					} else {
-						fconfUface = (fconfU(i-1, j, k) + fconfU(i, j, k)) * 0.5;
+						fconfUface = 0.5 * (fconfU(i, j, k) + fconfU(i-1, j, k));
 					}
                     target.mU(i,j,k) += dt*fconfUface;
 				}
@@ -313,9 +310,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 					//	const double fconfVextrap = (fconfV(i, j - 1, k) - fconfV(i, j - 2, k)) * 0.5;
 					//	fconfVface = fconfV(i, j-1, k) + fconfVextrap;
 					if(j == 0 || j == theDim[MACGrid::Y]){
-						fconfVface = 0;
+						fconfVface = 0.5 * fconfV(i,j,k);
 					} else {
-						fconfVface = (fconfV(i, j-1, k) + fconfV(i, j, k)) * 0.5;
+						fconfVface = 0.5 * (fconfV(i, j, k) + fconfV(i, j-1, k));
 					}
 					target.mV(i,j,k) += dt*fconfVface;
 				}
@@ -328,9 +325,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 					//	const double fconfWextrap = (fconfW(i, j, k - 1) - fconfW(i, j, k - 2)) * 0.5;
 					//	fconfWface = fconfW(i, j, k-1) + fconfWextrap;
 					if(k == 0 || k == theDim[MACGrid::Z]){
-						fconfWface = 0;
+						fconfWface = 0.5 * fconfW(i,j,k);
 					} else {
-						fconfWface = (fconfW(i, j, k-1) + fconfW(i, j, k)) * 0.5;
+						fconfWface = 0.5 * (fconfW(i, j, k) + fconfW(i, j, k-1));
 					}
 					target.mW(i,j,k) += dt*fconfWface;
 				}
@@ -418,8 +415,8 @@ void MACGrid::project(double dt)
 				}
 	}
 
-
-#ifdef _DEBUG
+#define CHECK_DIVERGENCE
+#ifdef CHECK_DIVERGENCE
 	// Check border velocities:
 	FOR_EACH_FACE {
 		if (isValidFace(MACGrid::X, i, j, k)) {
@@ -483,7 +480,7 @@ void MACGrid::project(double dt)
 	mV = target.mV;
 	mW = target.mW;
 
-#ifdef _DEBUG
+#ifdef CHECK_DIVERGENCE
 	// IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
    // TODO: Fix duplicate code:
    FOR_EACH_CELL {
