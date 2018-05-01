@@ -189,7 +189,7 @@ void MACGrid::computeBouyancy(double dt)
 	GridData fbuoy_c = GridData(); fbuoy_c.initialize(0.0);
 	FOR_EACH_CELL {
 				fbuoy_c(i,j,k) = -theBuoyancyAlpha * mD(i,j,k) +
-									  theBuoyancyBeta * (mT(i,j,k) - theBuoyancyAmbientTemperature);
+								  theBuoyancyBeta * (mT(i,j,k) - theBuoyancyAmbientTemperature);
 	}
 
     FOR_EACH_FACE {
@@ -197,9 +197,14 @@ void MACGrid::computeBouyancy(double dt)
 					//density and temp are defined at grid centers, will need to grab the two corresponding
 					//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
 					//is the interp done by getDensity and getTemp good enough
+
+					//div around 90, seems more stable, weird artifacts at border
 					//const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
 					//const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
 					//					  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
+					//target.mV(i, j, k) += f_buoy; //dt not needed? looks better without at least...
+
+					//using cell center forces, div around 90, seems less stable, but no weird artifacts at border
 					target.mV(i, j, k) += (0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k))); //dt not needed? looks better without at least...
 				}
 	}
@@ -241,7 +246,7 @@ void MACGrid::computeVorticityConfinement(double dt)
 	GridData mVc = GridData(); mVc.initialize(0.0);
 	GridData mWc = GridData(); mWc.initialize(0.0);
 	FOR_EACH_CELL {
-                //faces are left biased(-1/2 corresponds to i,j,k and +1/2 corresponds to (for xdir) i+1,j,k
+                //faces are left biased(-1/2 corresponds to i,j,k and +1/2 corresponds to (x dir) i+1,j,k
 				mUc(i,j,k) = 0.5 * (target.mU(i, j, k) + target.mU(i+1, j  , k  ));
 				mVc(i,j,k) = 0.5 * (target.mV(i, j, k) + target.mV(i  , j+1, k  ));
 				mWc(i,j,k) = 0.5 * (target.mW(i, j, k) + target.mW(i  , j  , k+1));
@@ -252,23 +257,22 @@ void MACGrid::computeVorticityConfinement(double dt)
 	GridData w2 = GridData(); w2.initialize(0.0);
 	GridData w3 = GridData(); w3.initialize(0.0);
 	GridData wMag = GridData(); wMag.initialize(0.0);
-	const double invTwiceCellSize = 1.0 / (2.0 * theCellSize);
-	const double invOneAndHalfCellSize = 1.0 / (1.5 * theCellSize);
+	const double invTwoCellSize = 1.0 / (2.0 * theCellSize);
 	const double invCellSize = 1.0 / (theCellSize);
 	FOR_EACH_CELL {
 				const vec3 vort(
                         //the way fedkiw mentions, but produces divergent field
-						//(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwiceCellSize,
-						//(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwiceCellSize,
-						//(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwiceCellSize
-						//same indexing except using cell faces, biased left, most divergence stable
-						//(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invOneAndHalfCellSize,
-						//(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invOneAndHalfCellSize,
-						//(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invOneAndHalfCellSize
-                        //indexing for faces on either side of cell, no bias, similar divergence stability
-						(target.mW(i,j+1,k) - target.mW(i,j,k) - target.mV(i,j,k+1) + target.mV(i,j,k)) * invCellSize,
-						(target.mU(i,j,k+1) - target.mU(i,j,k) - target.mW(i+1,j,k) + target.mW(i,j,k)) * invCellSize,
-						(target.mV(i+1,j,k) - target.mV(i,j,k) - target.mU(i,j+1,k) + target.mU(i,j,k)) * invCellSize
+						//(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwoCellSize,
+						//(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwoCellSize,
+						//(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwoCellSize
+						//same indexing except using cell faces, biased left, most divergence stability
+						(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invTwoCellSize,
+						(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invTwoCellSize,
+						(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invTwoCellSize
+                        //indexing for faces on either side of cell, no bias, less stable
+						//(target.mW(i,j+1,k) - target.mW(i,j,k) - target.mV(i,j,k+1) + target.mV(i,j,k)) * invCellSize,
+						//(target.mU(i,j,k+1) - target.mU(i,j,k) - target.mW(i+1,j,k) + target.mW(i,j,k)) * invCellSize,
+						//(target.mV(i+1,j,k) - target.mV(i,j,k) - target.mU(i,j+1,k) + target.mU(i,j,k)) * invCellSize
 				);
 				w1(i,j,k) = vort[0];
 				w2(i,j,k) = vort[1];
@@ -281,9 +285,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
 
 				const vec3 vortGrad(
-						(wMag(i+1,j,k) - wMag(i-1,j,k)) * invTwiceCellSize,
-						(wMag(i,j+1,k) - wMag(i,j-1,k)) * invTwiceCellSize,
-						(wMag(i,j,k+1) - wMag(i,j,k-1)) * invTwiceCellSize
+						(wMag(i+1,j,k) - wMag(i-1,j,k)) * invTwoCellSize,
+						(wMag(i,j+1,k) - wMag(i,j-1,k)) * invTwoCellSize,
+						(wMag(i,j,k+1) - wMag(i,j,k-1)) * invTwoCellSize
 				);
 				const vec3 N = vortGrad / (vortGrad.Length() + 0.0000001);
                 const vec3 fconf = theVorticityEpsilon * theCellSize * N.Cross(vort);
@@ -366,7 +370,7 @@ void MACGrid::project(double dt)
 
 	//solve for p
     double tol = 0.00001;
-	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 100, tol)) {tol *= 2;}
+	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 100, tol)) {tol *= 2; }
 
 	//subtract off the pressure gradients from the velocity fields.
 	//bottom page 39 in bridson course notes, note: the face velocities for
@@ -751,12 +755,11 @@ void MACGrid::calculateAMatrix() {
 	}
 }
 
-bool MACGrid::preconditionedConjugateGradient(const GridDataMatrix & A, GridData & p, const GridData & d, int maxIterations, double tolerance) {
+bool MACGrid::preconditionedConjugateGradient( const GridDataMatrix & A, GridData & p, const GridData & d, int maxIterations, double tolerance) {
 	// Solves Ap = d for p.
 
-	FOR_EACH_CELL {
-		p(i,j,k) = 0.0; // Initial guess p = 0.	
-	}
+	// Initial guess p = 0
+	FOR_EACH_CELL { p(i, j, k) = 0.0; }
 
 	GridData r = d; // Residual vector.
 
