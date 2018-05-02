@@ -37,22 +37,32 @@ void SmokeSim::step()
 {
 	double dt = 0.04;//0.1;
 
-   // Step0: Gather user forces
-   mGrid.updateSources();
+	const double frameTime = 0.04;
+	double remainingTime = frameTime;
 
-   // Step1: Calculate new velocities
-   mGrid.advectVelocity(dt);
-   mGrid.addExternalForces(dt);
-   mGrid.project(dt);
+	while(remainingTime > 0.0) {
+		//dt = frameTime;
+		dt = mGrid.getDeltaTime();
+        dt = (dt > remainingTime) ? remainingTime : dt;
 
-   // Step2: Calculate new temperature
-   mGrid.advectTemperature(dt);
+		// Step0: Gather user forces
+		mGrid.updateSources();
 
-   // Step3: Calculate new density 
-   mGrid.advectDensity(dt);
+		// Step1: Calculate new velocities
+		mGrid.advectVelocity(dt);
+		mGrid.addExternalForces(dt);
+		mGrid.project(dt);
 
-	// Step4: Advect rendering particles
-	mGrid.advectRenderingParticles(dt);
+		// Step2: Calculate new temperature
+		mGrid.advectTemperature(dt);
+
+		// Step3: Calculate new density
+		mGrid.advectDensity(dt);
+
+		// Step4: Advect rendering particles
+		mGrid.advectRenderingParticles(dt);
+        remainingTime -= dt;
+	}
 
 
 	mTotalFrameNum++;

@@ -94,43 +94,81 @@ void MACGrid::initialize()
    reset();
 }
 
+double MACGrid::getDeltaTime() {
+    double umax = 0;
+	FOR_EACH_CELL {
+                const double umag = getVelocity(getCenter(i,j,k)).Length();
+                umax = umag > umax ? umag : umax;
+	}
+    //can use last iters max values since there's little delta between frames
+    const double CFLfactor = 1.0;
+    umax += sqrt(CFLfactor*theCellSize*(fbuoymax+fconfmax));
+	return (CFLfactor*theCellSize / umax);
+}
+
 void MACGrid::updateSources()
 {
     // Set initial values for density, temperature, velocity
 
-    //there's an initial block of pink smoke in the grid where these get set
-	const int depth = theDim[MACGrid::Z] >> 1;
-    for(int i=6; i<12;i++){
-        for(int j=0; j<5; j++){
-            mV(i,j+1,depth) = 2.0;
-            mD(i,j,depth) = 1.0;
-            mT(i,j,depth) = 1.0;
 
-            mV(i,j+2,depth) = 2.0;
+    ////////////////first block
+	int depth = theDim[MACGrid::Z] >> 1;
+	double tempScale = 1.0;
+    int width = 5;
+    int startx = 6, stopx = startx + width, starty = 0, stopy = starty+width;
+    for(int i=startx; i<stopx;i++){
+        for(int j=starty; j<stopy; j++){
+            mV(i,j+1,depth) = 6.0;
             mD(i,j,depth) = 1.0;
-            mT(i,j,depth) = 1.0;
+            mT(i,j,depth) = theBuoyancyAmbientTemperature*tempScale;
         }
     }
 
+	//// Refresh particles in source.
+	//for(int i=startx; i<stopx; i++) {
+	//	for (int j = starty; j < stopy; j++) {
+	//		for (int k = 0; k <= 0; k++) {
+	//			vec3 cell_center(theCellSize*(i+0.5), theCellSize*(j+0.5), theCellSize*(k+0.5));
+	//			for(int p=0; p<10; p++) {
+    //                double a = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                double b = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                double c = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                vec3 shift(a, b, c);
+    //                vec3 xp = cell_center + shift;
+    //                rendering_particles.push_back(xp);
+    //            }
+	//		}
+	//	}
+	//}
 
-	// Refresh particles in source.
-	for(int i=6; i<12; i++) {
-		for (int j = 0; j < 5; j++) {
-			for (int k = 0; k <= 0; k++) {
-				vec3 cell_center(theCellSize*(i+0.5), theCellSize*(j+0.5), theCellSize*(k+0.5));
-				for(int p=0; p<10; p++) {
-                    double a = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
-                    double b = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
-                    double c = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
-                    vec3 shift(a, b, c);
-                    vec3 xp = cell_center + shift;
-                    rendering_particles.push_back(xp);
-                }
-			}
-		}
-	}
-	
+    //////////////////second block
+    depth = theDim[MACGrid::Z] >> 1;
+    tempScale = 1.4;
+    startx = 27, stopx = startx + width, starty = 0, stopy = starty+width;
+    for(int i=startx; i<stopx;i++){
+        for(int j=starty; j<stopy; j++){
+            mV(i,j+1,depth) = 4.0;
+            mD(i,j,depth) = 1.0;
+            mT(i,j,depth) = theBuoyancyAmbientTemperature*tempScale;
+        }
+    }
 
+    //// Refresh particles in source.
+    //for(int i=startx; i<stopx; i++) {
+    //    for (int j = starty; j < stopy; j++) {
+    //        for (int k = 0; k <= 0; k++) {
+    //            vec3 cell_center(theCellSize*(i+0.5), theCellSize*(j+0.5), theCellSize*(k+0.5));
+    //            for(int p=0; p<10; p++) {
+    //                double a = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                double b = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                double c = ((float) rand() / RAND_MAX - 0.5) * theCellSize;
+    //                vec3 shift(a, b, c);
+    //                vec3 xp = cell_center + shift;
+    //                rendering_particles.push_back(xp);
+    //            }
+    //        }
+    //    }
+    //}
 }
 
 ////////////////// BEGIN STEP 1/////////////////////
@@ -147,11 +185,14 @@ void MACGrid::advectVelocity(double dt)
     //Your code is here. It builds target.mU, target.mV and target.mW for all faces
 	FOR_EACH_FACE {
 				if (isValidFace(MACGrid::X, i, j, k)) {
-					target.mU(i, j, k) = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i, j, k), dt));
+					const double u = getVelocityX(getRewoundPosition(getFacePosition(MACGrid::X, i, j, k), dt));
+					target.mU(i, j, k) = u;
 				} if (isValidFace(MACGrid::Y, i, j, k)) {
-					target.mV(i, j, k) = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i, j, k), dt));
+					const double v = getVelocityY(getRewoundPosition(getFacePosition(MACGrid::Y, i, j, k), dt));
+					target.mV(i, j, k) = v;
 				} if (isValidFace(MACGrid::Z, i, j, k)) {
-					target.mW(i, j, k) = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i, j, k), dt));
+					const double w = getVelocityZ(getRewoundPosition(getFacePosition(MACGrid::Z, i, j, k), dt));
+					target.mW(i, j, k) = w;
 				}
 	}
 
@@ -160,8 +201,6 @@ void MACGrid::advectVelocity(double dt)
     mU = target.mU;
     mV = target.mV;
     mW = target.mW;
-
-
 }
 
 void MACGrid::addExternalForces(double dt) {
@@ -192,6 +231,7 @@ void MACGrid::computeBouyancy(double dt)
 								  theBuoyancyBeta * (mT(i,j,k) - theBuoyancyAmbientTemperature);
 	}
 
+	fbuoymax = 0;
     FOR_EACH_FACE {
 				if(isValidFace(MACGrid::Y, i, j, k) && j != 0  && j != theDim[MACGrid::Y]) {
 					//density and temp are defined at grid centers, will need to grab the two corresponding
@@ -205,13 +245,13 @@ void MACGrid::computeBouyancy(double dt)
 					//target.mV(i, j, k) += f_buoy; //dt not needed? looks better without at least...
 
 					//using cell center forces, div around 90, seems less stable, but no weird artifacts at border
-					target.mV(i, j, k) += (0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k))); //dt not needed? looks better without at least...
+					const double fbuoy = 0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k));
+					fbuoymax = fbuoy > fbuoymax ? fbuoy : fbuoymax;
+					target.mV(i, j, k) += dt*fbuoy;
 				}
 	}
 	// and then save the result to our object
 	mV = target.mV;
-
-
 }
 
 void MACGrid::computeVorticityConfinement(double dt)
@@ -280,6 +320,7 @@ void MACGrid::computeVorticityConfinement(double dt)
 				wMag(i,j,k) = vort.Length();
 	}
 
+    fconfmax = 0;
 	FOR_EACH_CELL {
                 //prefetch for later
 				const vec3 vort(w1(i,j,k), w2(i,j,k), w3(i,j,k));
@@ -293,12 +334,12 @@ void MACGrid::computeVorticityConfinement(double dt)
                 const vec3 fconf = theVorticityEpsilon * theCellSize * N.Cross(vort);
 
 				//just push info to faces of the cell here instead of doing another loop
-				if(isValidFace(MACGrid::X, i,j,k)   && i != 0 && i != theDim[MACGrid::X]) { target.mU(i,j,k)   += (0.5*fconf[0]);}
-				if(isValidFace(MACGrid::X, i+1,j,k) && i != 0 && i != theDim[MACGrid::X]) { target.mU(i+1,j,k) += (0.5*fconf[0]);}
-				if(isValidFace(MACGrid::Y, i,j,k)   && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j,k)   += (0.5*fconf[1]);}
-				if(isValidFace(MACGrid::Y, i,j+1,k) && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j+1,k) += (0.5*fconf[1]);}
-				if(isValidFace(MACGrid::Z, i,j,k)   && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k)   += (0.5*fconf[2]);}
-				if(isValidFace(MACGrid::Z, i,j,k+1) && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k+1) += (0.5*fconf[2]);}
+				if(isValidFace(MACGrid::X, i,j,k)   && i != 0 && i != theDim[MACGrid::X]) { target.mU(i,j,k)   += (dt*0.5*fconf[0]);}
+				if(isValidFace(MACGrid::X, i+1,j,k) && i != 0 && i != theDim[MACGrid::X]) { target.mU(i+1,j,k) += (dt*0.5*fconf[0]);}
+				if(isValidFace(MACGrid::Y, i,j,k)   && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j,k)   += (dt*0.5*fconf[1]);}
+				if(isValidFace(MACGrid::Y, i,j+1,k) && j != 0 && j != theDim[MACGrid::Y]) { target.mV(i,j+1,k) += (dt*0.5*fconf[1]);}
+				if(isValidFace(MACGrid::Z, i,j,k)   && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k)   += (dt*0.5*fconf[2]);}
+				if(isValidFace(MACGrid::Z, i,j,k+1) && k != 0 && k != theDim[MACGrid::Z]) { target.mW(i,j,k+1) += (dt*0.5*fconf[2]);}
 	}
 
 	// Then save the result to our object
@@ -307,21 +348,21 @@ void MACGrid::computeVorticityConfinement(double dt)
 	mW = target.mW;
 
 
-#ifdef CHECK_DIVERGENCE
-	GridData d = GridData(); d.initialize(0.0);
-	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
-	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
-	FOR_EACH_CELL {
-				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (mU(i+1,j,k) - mU(i,j,k)) +
-																   (mV(i,j+1,k) - mV(i,j,k)) +
-																   (mW(i,j,k+1) - mW(i,j,k))
-				);
-			}
-
-	double total = 0;
-	FOR_EACH_CELL { total += d(i,j,k); }
-	if(total > 0.0000001) { PRINT_LINE("Non-zero Divergence: " << total); }
-#endif
+//#ifdef CHECK_DIVERGENCE
+//	GridData d = GridData(); d.initialize(0.0);
+//	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
+//	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
+//	FOR_EACH_CELL {
+//				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (mU(i+1,j,k) - mU(i,j,k)) +
+//																   (mV(i,j+1,k) - mV(i,j,k)) +
+//																   (mW(i,j,k+1) - mW(i,j,k))
+//				);
+//			}
+//
+//	double total = 0;
+//	FOR_EACH_CELL { total += d(i,j,k); }
+//	if(total > 0.0000001) { PRINT_LINE("Non-zero Divergence: " << total); }
+//#endif
 
 }
 
@@ -371,6 +412,7 @@ void MACGrid::project(double dt)
 	//solve for p
     double tol = 0.00001;
 	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 100, tol)) {tol *= 2; }
+    //PRINT_LINE( "PCG converged with tolerance: " << tol );
 
 	//subtract off the pressure gradients from the velocity fields.
 	//bottom page 39 in bridson course notes, note: the face velocities for
@@ -819,7 +861,7 @@ bool MACGrid::preconditionedConjugateGradient( const GridDataMatrix & A, GridDat
 		sigma = sigmaNew;
 	}
 
-	PRINT_LINE( "PCG didn't converge with tolerance: " << tolerance );
+	//PRINT_LINE( "PCG didn't converge with tolerance: " << tolerance );
 	return false;
 }
 

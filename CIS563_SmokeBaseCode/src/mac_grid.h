@@ -20,6 +20,7 @@ public:
 	MACGrid& operator=(const MACGrid& orig);
 
 	void reset();
+	double getDeltaTime();
 
 	void draw(const Camera& c);
 	void updateSources();
@@ -90,7 +91,9 @@ protected:
 	GridData mD;  // Density, stored at grid centers, size is dimX*dimY*dimZ
 	GridData mT;  // Temperature, stored at grid centers, size is dimX*dimY*dimZ
 
-	
+    double fbuoymax = 10.0;
+	double fconfmax = 10.0;
+
 	GridDataMatrix AMatrix;
 	GridData precon;
 
