@@ -18,7 +18,7 @@ SmokeSim::~SmokeSim()
 
 void SmokeSim::reset()
 {
-   mGrid.reset();
+	mGrid.reset();
 	mTotalFrameNum = 0;
 }
 
@@ -119,9 +119,9 @@ void SmokeSim::grabScreen()  // Code adapted from asst#1 . USING STB_IMAGE_WRITE
 {
 	if (mFrameNum > 9999) exit(0);
 
-	// Save density field to a .bgeo file
-	std::string densityFile = "../records/DensityFrame" + std::to_string(mFrameNum) + ".bgeo";
-	mGrid.saveDensity(densityFile);
+	//// Save density field to a .bgeo file
+	//std::string densityFile = "../records/DensityFrame" + std::to_string(mFrameNum) + ".bgeo";
+	//mGrid.saveDensity(densityFile);
 
 	// Save an image:
 	unsigned char* bitmapData = new unsigned char[3 * recordWidth * recordHeight];
@@ -135,9 +135,9 @@ void SmokeSim::grabScreen()  // Code adapted from asst#1 . USING STB_IMAGE_WRITE
 	stbi_write_png(anim_filename, recordWidth, recordHeight, 3, bitmapData, recordWidth * 3);
 	delete [] bitmapData;
 
-	// Dump out rendering particle data in .bgeo file
-	std::string particleFile = "../records/frame" + std::to_string(mFrameNum) + ".bgeo";
-	mGrid.saveParticle(particleFile);
+	//// Dump out rendering particle data in .bgeo file
+	//std::string particleFile = "../records/frame" + std::to_string(mFrameNum) + ".bgeo";
+	//mGrid.saveParticle(particleFile);
 
 	mFrameNum++;
 }

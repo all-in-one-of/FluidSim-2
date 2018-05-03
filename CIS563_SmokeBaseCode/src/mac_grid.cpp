@@ -78,12 +78,12 @@ MACGrid::~MACGrid()
 
 void MACGrid::reset()
 {
-   mU.initialize();
-   mV.initialize();
-   mW.initialize();
-   mP.initialize();
-   mD.initialize();
-   mT.initialize(0.0);
+   mU.initialize(0.0);
+   mV.initialize(0.0);
+   mW.initialize(0.0);
+   mP.initialize(0.0);
+   mD.initialize(1.0);//theAirDensity?
+   mT.initialize(0.0);//theBuoyancyAmbientTemperature?
 
    calculateAMatrix();
    calculatePreconditioner(AMatrix);
@@ -113,14 +113,13 @@ void MACGrid::updateSources()
 
     ////////////////first block
 	int depth = theDim[MACGrid::Z] >> 1;
-	double tempScale = 1.0;
-    int width = 5;
-    int startx = 6, stopx = startx + width, starty = 0, stopy = starty+width;
+    int width = 10;//6, 10
+    int startx = theDim[0]/3 - (width/2), stopx = startx + width, starty = 0, stopy = starty+width;
     for(int i=startx; i<stopx;i++){
         for(int j=starty; j<stopy; j++){
-            mV(i,j+1,depth) = 6.0;
+            mV(i,j+1,depth) = 10.0;
             mD(i,j,depth) = 1.0;
-            mT(i,j,depth) = theBuoyancyAmbientTemperature*tempScale;
+            mT(i,j,depth) = 76.0;
         }
     }
 
@@ -141,17 +140,17 @@ void MACGrid::updateSources()
 	//	}
 	//}
 
-    //////////////////second block
-    depth = theDim[MACGrid::Z] >> 1;
-    tempScale = 1.4;
-    startx = 27, stopx = startx + width, starty = 0, stopy = starty+width;
-    for(int i=startx; i<stopx;i++){
-        for(int j=starty; j<stopy; j++){
-            mV(i,j+1,depth) = 4.0;
-            mD(i,j,depth) = 1.0;
-            mT(i,j,depth) = theBuoyancyAmbientTemperature*tempScale;
-        }
-    }
+    ////////////////////second block
+    //depth = theDim[MACGrid::Z] >> 1;
+    //tempScale = 1.4;
+    //startx = theDim[0]/2 + (width+width), stopx = startx + width, starty = 0, stopy = starty+width;
+    //for(int i=startx; i<stopx;i++){
+    //    for(int j=starty; j<stopy; j++){
+    //        mV(i,j+1,depth) = 4.0;
+    //        mD(i,j,depth) = 1.0;
+    //        mT(i,j,depth) = theBuoyancyAmbientTemperature*tempScale;
+    //    }
+    //}
 
     //// Refresh particles in source.
     //for(int i=startx; i<stopx; i++) {
@@ -177,10 +176,6 @@ void MACGrid::advectVelocity(double dt)
 {
     //Calculate new velocities and store in target
 
-    //Get rid of these three lines after you implement yours
-	//target.mU = mU;
-    //target.mV = mV;
-    //target.mW = mW;
 
     //Your code is here. It builds target.mU, target.mV and target.mW for all faces
 	FOR_EACH_FACE {
@@ -198,9 +193,9 @@ void MACGrid::advectVelocity(double dt)
 
 
     // Then save the result to our object
-    mU = target.mU;
-    mV = target.mV;
-    mW = target.mW;
+    //mU = target.mU;
+    //mV = target.mV;
+    //mW = target.mW;
 }
 
 void MACGrid::addExternalForces(double dt) {
@@ -221,8 +216,6 @@ void MACGrid::computeBouyancy(double dt)
 	// the user to achieve different behavior. Note that f_buoy = 0 where there's no
 	// smoke and the temp is at ambient level.
 
-	// copy the current state of mV as we need to keep accumulating
-	target.mV = mV;
 
     //calc the force at grid centers then the face force is the ave of the 2 neighboring cells
 	GridData fbuoy_c = GridData(); fbuoy_c.initialize(0.0);
@@ -230,6 +223,9 @@ void MACGrid::computeBouyancy(double dt)
 				fbuoy_c(i,j,k) = -theBuoyancyAlpha * mD(i,j,k) +
 								  theBuoyancyBeta * (mT(i,j,k) - theBuoyancyAmbientTemperature);
 	}
+
+    // copy the current state of mV as we need to keep accumulating
+    //target.mV = mV;
 
 	fbuoymax = 0;
     FOR_EACH_FACE {
@@ -251,7 +247,7 @@ void MACGrid::computeBouyancy(double dt)
 				}
 	}
 	// and then save the result to our object
-	mV = target.mV;
+	//mV = target.mV;
 }
 
 void MACGrid::computeVorticityConfinement(double dt)
@@ -261,16 +257,8 @@ void MACGrid::computeVorticityConfinement(double dt)
 	// Apply the forces to the current velocity and store the result in target
 	// STARTED.
 
-	//Get rid of this line after you implement yours
-	//target.mU = mU;
-	//target.mV = mV;
-	//target.mW = mW;
-
 	// Your code is here. It modifies target.mU,mV,mW for all faces.
-    //copy the current state of vel components as we need to keep accumulating
-	target.mU = mU;
-	target.mV = mV;
-	target.mW = mW;
+
 	//see fedkiw page 3 left, eq 9,10,11 and surrounding paras for vorticity confinement
 	//see fedkiw appendix page 6 bottom right for vorticity discretization calc
 	//see bridson siggraph page 58 and 59 for equations and discussion on vorticity confinement
@@ -280,6 +268,11 @@ void MACGrid::computeVorticityConfinement(double dt)
 	//f_conf = e * h * (N x w), e > 0 and controls confinement, h is cell size
 	//calculate the force on grid centers then for each face take average of the 2 corresponding grid cell centers
 	//border face can extrapolate or take the nearest grid center
+
+    //copy the current state of vel components as we need to keep accumulating
+    //target.mU = mU;
+    //target.mV = mV;
+    //target.mW = mW;
 
 	//need cell centered velocities for getting vorticity
 	GridData mUc = GridData(); mUc.initialize(0.0);
@@ -302,13 +295,13 @@ void MACGrid::computeVorticityConfinement(double dt)
 	FOR_EACH_CELL {
 				const vec3 vort(
                         //the way fedkiw mentions, but produces divergent field
-						//(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwoCellSize,
-						//(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwoCellSize,
-						//(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwoCellSize
+						(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwoCellSize,
+						(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwoCellSize,
+						(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwoCellSize
 						//same indexing except using cell faces, biased left, most divergence stability
-						(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invTwoCellSize,
-						(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invTwoCellSize,
-						(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invTwoCellSize
+						//(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invTwoCellSize,
+						//(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invTwoCellSize,
+						//(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invTwoCellSize
                         //indexing for faces on either side of cell, no bias, less stable
 						//(target.mW(i,j+1,k) - target.mW(i,j,k) - target.mV(i,j,k+1) + target.mV(i,j,k)) * invCellSize,
 						//(target.mU(i,j,k+1) - target.mU(i,j,k) - target.mW(i+1,j,k) + target.mW(i,j,k)) * invCellSize,
@@ -343,9 +336,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 	}
 
 	// Then save the result to our object
-	mU = target.mU;
-	mV = target.mV;
-	mW = target.mW;
+	//mU = target.mU;
+	//mV = target.mV;
+	//mW = target.mW;
 
 
 //#ifdef CHECK_DIVERGENCE
@@ -353,9 +346,9 @@ void MACGrid::computeVorticityConfinement(double dt)
 //	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
 //	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
 //	FOR_EACH_CELL {
-//				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (mU(i+1,j,k) - mU(i,j,k)) +
-//																   (mV(i,j+1,k) - mV(i,j,k)) +
-//																   (mW(i,j,k+1) - mW(i,j,k))
+//				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
+//																   (target.mV(i,j+1,k) - target.mV(i,j,k)) +
+//																   (target.mW(i,j,k+1) - target.mW(i,j,k))
 //				);
 //			}
 //
@@ -374,22 +367,16 @@ void MACGrid::project(double dt)
 	// 3. Solve for p
 	// Subtract pressure from our velocity and save in target
 	// STARTED.
-
-	// Get rid of these 3 lines after you implement yours
-	//target.mU = mU;
-	//target.mV = mV;
-	//target.mW = mW;
-
 	// Your code is here. It solves for a pressure field and modifies target.mU,mV,mW for all faces.
-
 
 	//construct d, see eq 4.22 on page 42 of bridsons course notes, see para 3 and 4 for explanation of AMatrix.
 	// and the coefficients moved to the rhs of eq 4.22
 	// velocities on the solid wall boundaries should be 0 before we set d
 	// copy state of vel to target
-	target.mU = mU;
-	target.mV = mV;
-	target.mW = mW;
+	//target.mU = mU;
+	//target.mV = mV;
+	//target.mW = mW;
+
 	GridData d = GridData(); d.initialize(0.0);
 	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
 	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
@@ -444,61 +431,67 @@ void MACGrid::project(double dt)
 				}
 	}
 
+    // Then save the result to our object
+    mP = target.mP;
+    mU = target.mU;
+    mV = target.mV;
+    mW = target.mW;
+
 #ifdef CHECK_DIVERGENCE
-	// Check border velocities:
-	FOR_EACH_FACE {
-				if (isValidFace(MACGrid::X, i, j, k)) {
+	//// Check border velocities:
+	//FOR_EACH_FACE {
+	//			if (isValidFace(MACGrid::X, i, j, k)) {
 
-					if (i == 0) {
-						if (abs(target.mU(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "LOW X:  " << target.mU(i,j,k) );
-							//target.mU(i,j,k) = 0;
-						}
-					}
+	//				if (i == 0) {
+	//					if (abs(target.mU(i,j,k)) > 0.0000001) {
+	//						PRINT_LINE( "LOW X:  " << target.mU(i,j,k) );
+	//						//target.mU(i,j,k) = 0;
+	//					}
+	//				}
 
-					if (i == theDim[MACGrid::X]) {
-						if (abs(target.mU(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "HIGH X: " << target.mU(i,j,k) );
-							//target.mU(i,j,k) = 0;
-						}
-					}
+	//				if (i == theDim[MACGrid::X]) {
+	//					if (abs(target.mU(i,j,k)) > 0.0000001) {
+	//						PRINT_LINE( "HIGH X: " << target.mU(i,j,k) );
+	//						//target.mU(i,j,k) = 0;
+	//					}
+	//				}
 
-				}
-				if (isValidFace(MACGrid::Y, i, j, k)) {
+	//			}
+	//			if (isValidFace(MACGrid::Y, i, j, k)) {
 
 
-					if (j == 0) {
-						if (abs(target.mV(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "LOW Y:  " << target.mV(i,j,k) );
-							//target.mV(i,j,k) = 0;
-						}
-					}
+	//				if (j == 0) {
+	//					if (abs(target.mV(i,j,k)) > 0.0000001) {
+	//						PRINT_LINE( "LOW Y:  " << target.mV(i,j,k) );
+	//						//target.mV(i,j,k) = 0;
+	//					}
+	//				}
 
-					if (j == theDim[MACGrid::Y]) {
-						if (abs(target.mV(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "HIGH Y: " << target.mV(i,j,k) );
-							//target.mV(i,j,k) = 0;
-						}
-					}
+	//				if (j == theDim[MACGrid::Y]) {
+	//					if (abs(target.mV(i,j,k)) > 0.0000001) {
+	//						PRINT_LINE( "HIGH Y: " << target.mV(i,j,k) );
+	//						//target.mV(i,j,k) = 0;
+	//					}
+	//				}
 
-				}
-				if (isValidFace(MACGrid::Z, i, j, k)) {
+	//			}
+	//			if (isValidFace(MACGrid::Z, i, j, k)) {
 
-					if (k == 0) {
-						if (abs(target.mW(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "LOW Z:  " << target.mW(i,j,k) );
-							//target.mW(i,j,k) = 0;
-						}
-					}
+	//				if (k == 0) {
+	//					if (abs(target.mW(i,j,k)) > 0.0000001) {
+	//						PRINT_LINE( "LOW Z:  " << target.mW(i,j,k) );
+	//						//target.mW(i,j,k) = 0;
+	//					}
+	//				}
 
-					if (k == theDim[MACGrid::Z]) {
-						if (abs(target.mW(i,j,k)) > 0.0000001) {
-							PRINT_LINE( "HIGH Z: " << target.mW(i,j,k) );
-							//target.mW(i,j,k) = 0;
-						}
-					}
-				}
-			}
+    //					if (k == theDim[MACGrid::Z]) {
+    //						if (abs(target.mW(i,j,k)) > 0.0000001) {
+    //							PRINT_LINE( "HIGH Z: " << target.mW(i,j,k) );
+    //							//target.mW(i,j,k) = 0;
+    //						}
+    //					}
+    //				}
+    //			}
 	// IMPLEMENT THIS AS A SANITY CHECK: assert (checkDivergence());
 	// TODO: Fix duplicate code:
 	FOR_EACH_CELL {
@@ -517,14 +510,6 @@ void MACGrid::project(double dt)
 				}
 			}
 #endif
-
-
-	// Then save the result to our object
-	mP = target.mP;
-	mU = target.mU;
-	mV = target.mV;
-	mW = target.mW;
-
 
 }
 ////////////////// END STEP 1/////////////////////
