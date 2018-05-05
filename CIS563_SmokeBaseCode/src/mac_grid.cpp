@@ -15,7 +15,7 @@
 // Globals
 MACGrid target;
 
-#define CHECK_DIVERGENCE
+//#define CHECK_DIVERGENCE
 
 
 // NOTE: x -> cols, z -> rows, y -> stacks
@@ -82,7 +82,7 @@ void MACGrid::reset()
    mV.initialize(0.0);
    mW.initialize(0.0);
    mP.initialize(0.0);
-   mD.initialize(1.0);//theAirDensity?
+   mD.initialize(0.0);//theAirDensity?
    mT.initialize(0.0);//theBuoyancyAmbientTemperature?
 
    calculateAMatrix();
@@ -341,22 +341,6 @@ void MACGrid::computeVorticityConfinement(double dt)
 	//mW = target.mW;
 
 
-//#ifdef CHECK_DIVERGENCE
-//	GridData d = GridData(); d.initialize(0.0);
-//	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
-//	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
-//	FOR_EACH_CELL {
-//				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
-//																   (target.mV(i,j+1,k) - target.mV(i,j,k)) +
-//																   (target.mW(i,j,k+1) - target.mW(i,j,k))
-//				);
-//			}
-//
-//	double total = 0;
-//	FOR_EACH_CELL { total += d(i,j,k); }
-//	if(total > 0.0000001) { PRINT_LINE("Non-zero Divergence: " << total); }
-//#endif
-
 }
 
 void MACGrid::project(double dt)
@@ -377,16 +361,42 @@ void MACGrid::project(double dt)
 	//target.mV = mV;
 	//target.mW = mW;
 
+    ////clamp vel when its needlessly small //actually, this really screws up the look of the sim
+	//FOR_EACH_FACE {
+	//			const double clampThresh = 0.0000001;//6 zeros is flt_epsilon
+	//			if(isValidFace(0,i,j,k) && i != 0 && i != theDim[0]) {
+	//				target.mU(i,j,k) = target.mU(i,j,k) <= clampThresh ? 0.0 : target.mU(i,j,k);
+	//			}
+	//			if(isValidFace(1,i,j,k) && j != 0 && j != theDim[1]) {
+	//				target.mV(i,j,k) = target.mV(i,j,k) <= clampThresh ? 0.0 : target.mV(i,j,k);
+	//			}
+	//			if(isValidFace(2,i,j,k) && k != 0 && k != theDim[2]) {
+	//				target.mW(i,j,k) = target.mW(i,j,k) <= clampThresh ? 0.0 : target.mW(i,j,k);
+	//			}
+	//}
+
 	GridData d = GridData(); d.initialize(0.0);
 	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
 	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
+	double total = 0;
     FOR_EACH_CELL {
-				d(i,j,k) = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
-																   (target.mV(i,j+1,k) - target.mV(i,j,k)) +
-											                       (target.mW(i,j,k+1) - target.mW(i,j,k))
-											                     );
+				const double divergenceCell = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
+																                      (target.mV(i,j+1,k) - target.mV(i,j,k)) +
+											                                          (target.mW(i,j,k+1) - target.mW(i,j,k))
+											                                        );
+				d(i,j,k) = divergenceCell;
+				total += divergenceCell;
 	}
 
+	//if(total > 0.0000001) {
+	//	PRINT_LINE("Non-zero Divergence: " << total);
+	//    //Could try to  keep divergence under wraps when it starts to build up over frames by subtracting it off across all cells
+	//    //each cell owns 3 faces so for each cell subtract off (total/Amatrixcoeffdivideandneginvcellsize) / numCells / numInteriorFaces on only interior faces of each cell
+    //
+    //	  //This runs into floating point issues (working with two numbers that have very different exponents), could randomly pick a cell
+	//    //that has a large individual divergence and values with similar exponent as the total and do the subtration on that cell
+	//    //could determine this when doing the divergence loop
+	//}
 
 	//construct A
 	// A is constructed for solid static bounding box already

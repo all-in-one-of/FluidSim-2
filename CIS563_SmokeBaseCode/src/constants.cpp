@@ -18,4 +18,4 @@ const double theBuoyancyAlpha = 0.08; //0.08 Gravity's effect on the smoke parti
 const double theBuoyancyBeta = 0.37; //0.37 Buoyancy's effect due to temperature difference.
 const double theBuoyancyAmbientTemperature = 0.0; //0.0 Ambient temperature.
 
-const double theVorticityEpsilon = 1.00; //0.10
+const double theVorticityEpsilon = 0.50; //0.10
