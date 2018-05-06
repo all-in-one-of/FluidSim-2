@@ -234,13 +234,13 @@ void MACGrid::computeBouyancy(double dt)
 					//cell centers forces, then average them and mult by dt (see fedkiw appendix page7 topleft), although..
 					//is the interp done by getDensity and getTemp good enough
 
-					//div around 90, seems more stable, weird artifacts at border
+					//weird artifacts at border, not the method in the fedkiw paper
 					//const vec3 facePos = getFacePosition(MACGrid::Y, i, j, k);
 					//const double f_buoy = -theBuoyancyAlpha * getDensity(facePos) +
 					//					  theBuoyancyBeta * (getTemperature(facePos) - theBuoyancyAmbientTemperature);
 					//target.mV(i, j, k) += f_buoy; //dt not needed? looks better without at least...
 
-					//using cell center forces, div around 90, seems less stable, but no weird artifacts at border
+					//using cell center forces, but no weird artifacts at border, fedkiw method
 					const double fbuoy = 0.5 * (fbuoy_c(i,j,k) + fbuoy_c(i,j-1,k));
 					fbuoymax = fbuoy > fbuoymax ? fbuoy : fbuoymax;
 					target.mV(i, j, k) += dt*fbuoy;
@@ -294,18 +294,14 @@ void MACGrid::computeVorticityConfinement(double dt)
 	const double invCellSize = 1.0 / (theCellSize);
 	FOR_EACH_CELL {
 				const vec3 vort(
-                        //the way fedkiw mentions, but produces divergent field
+                        //the way fedkiw mentions
 						(mWc(i,j+1,k) - mWc(i,j-1,k) - mVc(i,j,k+1) + mVc(i,j,k-1)) * invTwoCellSize,
 						(mUc(i,j,k+1) - mUc(i,j,k-1) - mWc(i+1,j,k) + mWc(i-1,j,k)) * invTwoCellSize,
 						(mVc(i+1,j,k) - mVc(i-1,j,k) - mUc(i,j+1,k) + mUc(i,j-1,k)) * invTwoCellSize
-						//same indexing except using cell faces, biased left, most divergence stability
+						//same indexing except using cell faces, biased left
 						//(target.mW(i,j+1,k) - target.mW(i,j-1,k) - target.mV(i,j,k+1) + target.mV(i,j,k-1)) * invTwoCellSize,
 						//(target.mU(i,j,k+1) - target.mU(i,j,k-1) - target.mW(i+1,j,k) + target.mW(i-1,j,k)) * invTwoCellSize,
 						//(target.mV(i+1,j,k) - target.mV(i-1,j,k) - target.mU(i,j+1,k) + target.mU(i,j-1,k)) * invTwoCellSize
-                        //indexing for faces on either side of cell, no bias, less stable
-						//(target.mW(i,j+1,k) - target.mW(i,j,k) - target.mV(i,j,k+1) + target.mV(i,j,k)) * invCellSize,
-						//(target.mU(i,j,k+1) - target.mU(i,j,k) - target.mW(i+1,j,k) + target.mW(i,j,k)) * invCellSize,
-						//(target.mV(i+1,j,k) - target.mV(i,j,k) - target.mU(i,j+1,k) + target.mU(i,j,k)) * invCellSize
 				);
 				w1(i,j,k) = vort[0];
 				w2(i,j,k) = vort[1];
@@ -361,31 +357,19 @@ void MACGrid::project(double dt)
 	//target.mV = mV;
 	//target.mW = mW;
 
-    ////clamp vel when its needlessly small //actually, this really screws up the look of the sim
-	//FOR_EACH_FACE {
-	//			const double clampThresh = 0.0000001;//6 zeros is flt_epsilon
-	//			if(isValidFace(0,i,j,k) && i != 0 && i != theDim[0]) {
-	//				target.mU(i,j,k) = target.mU(i,j,k) <= clampThresh ? 0.0 : target.mU(i,j,k);
-	//			}
-	//			if(isValidFace(1,i,j,k) && j != 0 && j != theDim[1]) {
-	//				target.mV(i,j,k) = target.mV(i,j,k) <= clampThresh ? 0.0 : target.mV(i,j,k);
-	//			}
-	//			if(isValidFace(2,i,j,k) && k != 0 && k != theDim[2]) {
-	//				target.mW(i,j,k) = target.mW(i,j,k) <= clampThresh ? 0.0 : target.mW(i,j,k);
-	//			}
-	//}
+    ////if you clamp vel when its needlessly small(less than epsilon), this really screws up the look of the sim so dont do it
 
 	GridData d = GridData(); d.initialize(0.0);
 	const double AMatrixCoeffDivide = (theAirDensity*theCellSize*theCellSize) / dt;
 	const double AMatrixCoeffDivideAndNegInvCellSize = AMatrixCoeffDivide * (-1.0 / theCellSize);
-	double total = 0;
+	//double total = 0;
     FOR_EACH_CELL {
 				const double divergenceCell = AMatrixCoeffDivideAndNegInvCellSize * ( (target.mU(i+1,j,k) - target.mU(i,j,k)) +
 																                      (target.mV(i,j+1,k) - target.mV(i,j,k)) +
 											                                          (target.mW(i,j,k+1) - target.mW(i,j,k))
 											                                        );
 				d(i,j,k) = divergenceCell;
-				total += divergenceCell;
+				//total += divergenceCell;
 	}
 
 	//if(total > 0.0000001) {
@@ -408,7 +392,7 @@ void MACGrid::project(double dt)
 
 	//solve for p
     double tol = 0.00001;
-	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 100, tol)) {tol *= 2; }
+	while(!preconditionedConjugateGradient(AMatrix, target.mP, d, 20, tol)) {tol *= 2; }
     //PRINT_LINE( "PCG converged with tolerance: " << tol );
 
 	//subtract off the pressure gradients from the velocity fields.
